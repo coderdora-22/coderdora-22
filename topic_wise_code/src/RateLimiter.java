@@ -1,4 +1,8 @@
 import java.util.Random;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Queue;
+
 
 public class RateLimiter {
     private final long bucketcapacity;
@@ -44,4 +48,71 @@ public class RateLimiter {
             System.out.println(consumed);
         }
     }
+}
+
+
+class RateLimit {
+    public int REQUEST_LIMIT = 100;
+    public Long TIME_LIMIT = 1000L;
+    public class HitCounter {
+        public Queue<Long> queue;
+        private final long requestCapacity=100;
+        private final double refillCreditPerOnemilli = (double)TIME_LIMIT / 500; // because the credit limit was 500 this can vary
+        private double availableCredit;
+        private long lastRefillStamp;
+
+        public HitCounter() {
+            queue = new LinkedList<>();
+            lastRefillStamp = System.currentTimeMillis();
+            availableCredit = requestCapacity;
+        }
+
+        synchronized public boolean tryRequest(int num){
+            refill();
+            if(availableCredit < num){
+                return false;
+            }else{
+                availableCredit-=num;
+                return true;
+            }
+        }
+
+        public void refill(){
+            long currentMilliTimeStamp = System.currentTimeMillis();
+            if(currentMilliTimeStamp < lastRefillStamp){
+                long millisSinceLastRefill = currentMilliTimeStamp - lastRefillStamp;
+                double refillValue = millisSinceLastRefill * refillCreditPerOnemilli;
+                this.availableCredit = Math.min(requestCapacity,refillValue+availableCredit);
+                this.lastRefillStamp = currentMilliTimeStamp;
+            }
+        }
+
+        public boolean hit(long timestamp) {
+            /* when a timestamp hit, we should poll all the timestamp before TIME_LIMIT*/
+            while (!queue.isEmpty() && queue.peek() - timestamp >= TIME_LIMIT) {
+                refill();
+                if(availableCredit<timestamp)
+                    return false;
+                else {
+                    availableCredit=availableCredit-queue.poll();
+                }
+            }
+            if (queue.size() < 100) {
+                queue.add(timestamp); return true;
+            }
+            return false;
+        }
+    }
+    public HashMap<String, HitCounter> clientTimeStampMap = new HashMap<>();
+    public boolean isAllow(String clientId) {
+        long currTime = System.currentTimeMillis();
+        if (!clientTimeStampMap.containsKey(clientId)) {
+            HitCounter h = new HitCounter();
+            h.hit(currTime); return true;
+        } else {
+            HitCounter h = clientTimeStampMap.get(clientId);
+            return h.hit(currTime);
+        }
+    }
+
 }
